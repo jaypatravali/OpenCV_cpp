@@ -1,0 +1,5 @@
+/home/jay/Music/Opencv_tutorials_cpp/Image_operations/CMakeFiles/Rotate_image.dir
+/home/jay/Music/Opencv_tutorials_cpp/Image_operations/CMakeFiles/brightness.dir
+/home/jay/Music/Opencv_tutorials_cpp/Image_operations/CMakeFiles/contrast.dir
+/home/jay/Music/Opencv_tutorials_cpp/Image_operations/CMakeFiles/trackbar.dir
+/home/jay/Music/Opencv_tutorials_cpp/Image_operations/CMakeFiles/trackbar_callback.dir

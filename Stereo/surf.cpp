@@ -1,0 +1,307 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <string.h>  /* String function definitions */
+#include <unistd.h>  /* UNIX standard function definitions */
+#include <fcntl.h>   /* File control definitions */
+#include <errno.h>   /* Error number definitions */
+#include <termios.h> /* POSIX terminal control definitions */
+#include <sys/time.h>
+#include <sys/types.h>
+
+#include "opencv2/calib3d/calib3d.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/features2d/features2d.hpp"
+#include "opencv2/opencv.hpp"
+
+
+
+using namespace cv;
+
+int open_port(void)
+{
+    int fd;
+    fd = open("/dev/ttyUSB1", O_RDWR | O_NOCTTY | O_NDELAY);
+    if (fd != -1) fcntl(fd, F_SETFL, FNDELAY);
+
+    return (fd);
+}
+
+int main()
+{
+//for serial port
+    int fd = open_port();
+    fd_set readfs;
+    if (fd == -1)
+    {
+        std::cout << "Could not open /dev/ttyUSB1" << std::endl;
+        return -1;
+    }
+
+    struct timeval Timeout;
+    Timeout.tv_usec = 0;  /* milliseconds */
+    Timeout.tv_sec  = 0;  /* seconds */
+
+//for stereo
+	int w=640, h=480;
+
+	Mat M1, M2, D1, D2, R1, R2, P1, P2, mx1, mx2, my1, my2, Q;
+	FileStorage fs;
+
+	fs.open("intrinsics.xml", FileStorage::READ);
+	fs["M1"] >> M1;
+	fs["D1"] >> D1;
+	fs["M2"] >> M2;
+	fs["D2"] >> D2;
+	fs.release();
+
+	fs.open("extrinsics.xml", FileStorage::READ);
+	fs["R1"] >> R1;
+	fs["P1"] >> P1;
+	fs["R2"] >> R2;
+	fs["P2"] >> P2;
+	fs["Q"]  >> Q;
+	fs.release();
+
+    Q.convertTo(Q, CV_32F);
+
+	initUndistortRectifyMap(M1, D1, R1, P1, Size(w, h), CV_32FC1, mx1, my1);
+    initUndistortRectifyMap(M2, D2, R2, P2, Size(w, h), CV_32FC1, mx2, my2);
+
+    int ndisp = 192; //288 96 192 48
+	StereoBM bm(StereoBM::BASIC_PRESET);
+	bm.state->preFilterCap = 31;
+    bm.state->SADWindowSize = 41;
+    bm.state->minDisparity = 48;
+    bm.state->numberOfDisparities = ndisp;
+    bm.state->textureThreshold = 10;
+    bm.state->uniquenessRatio = 15;
+    bm.state->speckleWindowSize = 100;
+    bm.state->speckleRange = 32;
+    bm.state->disp12MaxDiff = 1;
+
+
+//for SURF
+	Mat object = imread("photo20.jpg", CV_LOAD_IMAGE_GRAYSCALE);
+
+    if( !object.data )
+    {
+        std::cout<< "Error reading object " << std::endl;
+        return -1;
+    }
+
+    std::vector<Point2f> obj_corners(4);
+    obj_corners[0] = cvPoint(0, 0);
+    obj_corners[1] = cvPoint(object.cols, 0);
+    obj_corners[2] = cvPoint(object.cols, object.rows);
+    obj_corners[3] = cvPoint(0, object.rows);
+
+    SurfFeatureDetector detector(400);
+    SurfDescriptorExtractor extractor;
+    FlannBasedMatcher matcher;
+
+    std::vector<KeyPoint> kp_object;
+    Mat des_object;
+    detector.detect(object, kp_object);
+    extractor.compute(object, kp_object, des_object);
+
+//miscellaneous
+    char key = 'a'; int framecount = 0, count = 0;
+	Camera cl("/dev/video2", w, h, 20);
+    Camera cr("/dev/video1", w, h, 20);
+
+	namedWindow("disparity");
+	namedWindow("object detection");
+
+	int window = 25, offset = 125; //35 pixels on either side, centre 25 pixels to the right of 240
+	bool is_open = false, isforward = false, nointerrupt = false;
+
+	while (key != 27)
+	{
+	    //flags
+	    bool ask = false, left = false, right = false, middle = false, inrange = false, detect = false, stop = false;
+
+	    //serial receiving
+	    FD_SET(fd, &readfs);
+        select(fd + 1, &readfs, NULL, NULL, &Timeout);
+        void *buf; int rx = 0;
+        if (FD_ISSET(fd, &readfs))
+        {
+            rx = read(fd, buf, 1);
+            tcflush(fd, TCIFLUSH);
+            ask = true; //isforward = false;
+        }
+
+	    char extent = 0; float depth;
+
+	    IplImage *l=cvCreateImage(Size(w, h), 8, 3);
+	    IplImage *r=cvCreateImage(Size(w, h), 8, 3);
+	    cl.Update(&cr);
+
+	    if (framecount < 5)
+	    {
+	        framecount++;
+	        continue;
+	    }
+
+	    cl.toIplImage(l);
+	    cr.toIplImage(r);
+        Mat lg, rg, lge, rge;
+        cvtColor(Mat(l), lg, CV_RGB2GRAY);
+        cvtColor(Mat(r), rg, CV_RGB2GRAY);
+
+        equalizeHist(lg, lge);
+        equalizeHist(rg, rge);
+
+        line(lg, Point(w/2 - window + offset, 0), Point(w/2 - window + offset, h), Scalar(0, 255, 0), 2);
+        line(lg, Point(w/2 + window + offset, 0), Point(w/2 + window + offset, h), Scalar(0, 255, 0), 2);
+
+        line(rg, Point(w/2 - window - offset, 0), Point(w/2 - window - offset, h), Scalar(0, 255, 0), 2);
+        line(rg, Point(w/2 + window - offset, 0), Point(w/2 + window - offset, h), Scalar(0, 255, 0), 2);
+
+        Mat des_image, img_matches, H;
+        std::vector<KeyPoint> kp_image;
+        std::vector<vector<DMatch > > matches;
+        std::vector<DMatch > good_matches;
+        std::vector<Point2f> obj;
+        std::vector<Point2f> scene;
+        std::vector<Point2f> scene_corners(4);
+
+        detector.detect(lg, kp_image);
+        extractor.compute(lg, kp_image, des_image);
+        matcher.knnMatch(des_object, des_image, matches, 2);
+
+        for(int i = 0; i < matches.size(); i++) //THIS LOOP IS SENSITIVE TO SEGFAULTS
+        {
+            if(matches[i].size()==2 && (matches[i][0].distance < 0.8*(matches[i][1].distance)) )
+            {
+                good_matches.push_back(matches[i][0]);
+                obj.push_back(kp_object[matches[i][0].queryIdx].pt);
+                scene.push_back(kp_image[matches[i][0].trainIdx].pt);
+            }
+        }
+
+        if (good_matches.size() >= 35)
+        {
+            H = findHomography(obj, scene, CV_RANSAC);
+            perspectiveTransform(obj_corners, scene_corners, H);
+
+            RotatedRect box = minAreaRect(scene_corners);
+            Point2f rect_corners[4];
+            box.points(rect_corners);
+            Rect roi = box.boundingRect();
+
+            if (roi.area() > 3000)
+            {
+                detect = true; count = 0;
+                for (int i = 0; i < 4; i++)
+                {
+                    line(lg, rect_corners[i], rect_corners[(i+1)%4], Scalar(255, 255, 255), 4);
+                }
+                line(lg, box.center, box.center, Scalar(255, 255, 255), 8);
+
+                if (box.center.x < w/2 - window + offset)
+                {
+                    left = true;
+                    //write(fd, "a", 1);
+                    extent = (w/2 + offset - box.center.x) / 5; //std::cout << int(extent) << std::endl;
+                    if (extent < 6) extent = 6;
+                    if (isforward == true) stop = true;
+                }
+
+                else if (box.center.x > w/2 + window + offset)
+                {
+                    right = true;
+                    //write(fd, "d", 1);
+                    extent = (box.center.x - (w/2 + offset)) / 5; //std::cout << int(extent) << std::endl;
+                    if (extent < 6) extent = 6;
+                    if (isforward == true) stop = true;
+                }
+
+                else if (box.center.x > w/2 - window + offset && box.center.x < w/2 + window + offset)
+                {
+                    middle = true;
+                    Mat lr, rr;
+                    //imshow("l", lg); imshow("r", rg);
+
+                    remap(lge, lr, mx1, my1, INTER_LINEAR);
+                    remap(rge, rr, mx2, my2, INTER_LINEAR);
+
+                    Mat disp, vdisp, disp32;
+                    bm(lr, rr, disp);
+                    disp.convertTo(vdisp, CV_8U, 255/(ndisp*16.));
+                    disp.convertTo(disp32, CV_32F, 1.f/16.f);
+
+                    for (int i = 0; i < 4; i++)
+                    {
+                        line(vdisp, rect_corners[i], rect_corners[(i+1)%4], Scalar(255, 255, 255), 4);
+                    }
+                    line(vdisp, box.center, box.center, Scalar(255, 255, 255), 8);
+
+                    imshow("disparity", vdisp);
+
+                    Mat xyz;
+                    reprojectImageTo3D(disp32, xyz, Q, true);
+                    int ch[] = {2, 0};
+                    Mat z(xyz.size(), CV_32FC1);
+                    mixChannels(&xyz, 1, &z, 1, ch, 1);
+
+                    float dist = 0; unsigned long int npts = 0;
+                    for (int i = 0; i < z.rows; i++)
+                    {
+                        for (int j = 0; j < z.cols; j++)
+                        {
+                            if (roi.contains(Point(j, i)) && z.at<float>(i, j) > -500.0 && z.at<float>(i, j) < 500.0)
+                            {
+                                dist += z.at<float>(i, j);
+                                npts++;
+                            }
+                        }
+                    }
+
+                    //std::cout << -dist/npts << std::endl;
+                    depth = 1.1561 * ((-dist/npts) - 0.124);
+                    std::cout << depth << std::endl;
+                    extent = depth > 0 && depth < 45 ? (char(depth) - 6) / 3 : 2;
+
+                    if (depth > 0 && depth < 35) inrange = true;
+                    if (depth > 0 && depth < 30) nointerrupt = true;
+                }
+            }
+        }
+
+//decisions and commanding
+        if (stop && !nointerrupt) {write(fd, "x", 1); write(fd, &extent, 1); isforward = false; std::cout << "stop" << std::endl;}
+
+        if (ask)
+        {
+            std::cout << "got" << std::endl;
+            if (left)   {write(fd, "a", 1); write(fd, &extent, 1); tcflush(fd, TCIFLUSH);}
+            if (right)  {write(fd, "d", 1); write(fd, &extent, 1); tcflush(fd, TCIFLUSH);}
+            //if ((middle && !inrange) || (middle && is_open)) {write(fd, "w", 1); write(fd, &extent, 1); tcflush(fd, TCIFLUSH); isforward = true;}
+            //if (inrange && !is_open){write(fd, "o", 1); write(fd, &extent, 1); is_open = true; std::cout << "open" << std::endl;}
+            if (middle)
+            {
+                if (!is_open) {write(fd, "o", 1); write(fd, &extent, 1); is_open = true; std::cout << "open" << std::endl;}
+                else {write(fd, "w", 1); write(fd, &extent, 1); tcflush(fd, TCIFLUSH); isforward = true;}
+            }
+            if (!detect)
+            {
+                count ++;
+                if (count > 14)
+                {
+                    count = 0;
+                    if (is_open) {write(fd, "c", 1); write(fd, &extent, 1); is_open = false; nointerrupt = false; std::cout << "close" << std::endl;}
+                }
+            }
+        }
+
+        imshow("object detection", lg);
+
+        key = cv::waitKey(1);
+        cvReleaseImage(&l);
+        cvReleaseImage(&r);
+	}
+	return 0;
+}
+

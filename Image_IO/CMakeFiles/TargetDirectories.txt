@@ -1,0 +1,3 @@
+/home/jay/Music/Opencv_tutorials_cpp/Image_IO/CMakeFiles/DisplayImage.dir
+/home/jay/Music/Opencv_tutorials_cpp/Image_IO/CMakeFiles/Mouse_click.dir
+/home/jay/Music/Opencv_tutorials_cpp/Image_IO/CMakeFiles/write_image.dir

@@ -1,0 +1,3 @@
+/home/jay/Music/Opencv_tutorials_cpp/Video_operations/CMakeFiles/brightness_camera.dir
+/home/jay/Music/Opencv_tutorials_cpp/Video_operations/CMakeFiles/contrast_video.dir
+/home/jay/Music/Opencv_tutorials_cpp/Video_operations/CMakeFiles/rotate_video.dir

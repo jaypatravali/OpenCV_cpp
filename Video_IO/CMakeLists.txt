@@ -1,0 +1,9 @@
+cmake_minimum_required(VERSION 2.8)
+project(Stereo)
+find_package( OpenCV REQUIRED )
+add_executable( Video_from_file Video_from_file.cpp )
+add_executable( Video_from_camera Video_from_camera.cpp )
+
+target_link_libraries( Video_from_camera ${OpenCV_LIBS} )
+target_link_libraries( Video_from_file ${OpenCV_LIBS} )
+

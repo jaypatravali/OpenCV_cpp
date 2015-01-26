@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 2.8)
+project(Stereo)
+find_package( OpenCV REQUIRED )
+add_executable( Stereo Stereo.cpp )
+add_executable( surf surf.cpp )
+target_link_libraries( surf ${OpenCV_LIBS} )
+target_link_libraries( Stereo ${OpenCV_LIBS} )

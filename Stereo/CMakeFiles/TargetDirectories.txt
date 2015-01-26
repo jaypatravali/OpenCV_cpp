@@ -1,0 +1,2 @@
+/home/jay/Music/Opencv_tutorials_cpp/Stereo/CMakeFiles/Stereo.dir
+/home/jay/Music/Opencv_tutorials_cpp/Stereo/CMakeFiles/surf.dir

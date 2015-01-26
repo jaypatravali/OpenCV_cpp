@@ -1,0 +1,2 @@
+/home/jay/Music/Opencv_tutorials_cpp/Video_IO/CMakeFiles/Video_from_camera.dir
+/home/jay/Music/Opencv_tutorials_cpp/Video_IO/CMakeFiles/Video_from_file.dir

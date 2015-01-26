@@ -1,0 +1,1 @@
+/home/jay/Music/Opencv_tutorials_cpp/feature_detection/CMakeFiles/surf.dir
